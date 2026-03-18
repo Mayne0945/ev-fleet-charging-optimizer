@@ -1,0 +1,18 @@
+# Terraform
+**/.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.env
+
+# AWS credentials
+.aws/
+credentials
+
+# Zip files
+*.zip
