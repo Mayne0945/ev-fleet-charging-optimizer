@@ -16,3 +16,6 @@ credentials
 
 # Zip files
 *.zip
+*.tfstate*
+.terraform/
+.terraform.lock.hcl
