@@ -1,0 +1,46 @@
+{
+    "FunctionName": "ev-fleet-optimizer",
+    "FunctionArn": "arn:aws:lambda:eu-west-1:202564564111:function:ev-fleet-optimizer",
+    "Runtime": "python3.11",
+    "Role": "arn:aws:iam::202564564111:role/ev-fleet-lambda-role",
+    "Handler": "optimizer.handler",
+    "CodeSize": 3015,
+    "Description": "KMS cache cleared Sun Mar 22 16:30:06 SAST 2026",
+    "Timeout": 60,
+    "MemorySize": 128,
+    "LastModified": "2026-03-22T14:32:03.000+0000",
+    "CodeSha256": "Ew2264H+0H7JdmWLByjEW+AxvtYwjOhimNkcRSVMsAM=",
+    "Version": "$LATEST",
+    "Environment": {
+        "Variables": {
+            "DYNAMODB_TABLE_NAME": "ev-fleet-fleet-state",
+            "GOLD_BUCKET_NAME": "ev-fleet-gold-00cc42d3"
+        }
+    },
+    "TracingConfig": {
+        "Mode": "PassThrough"
+    },
+    "RevisionId": "ac1e8972-62ce-4882-95be-3b2d0b7e4d84",
+    "State": "Active",
+    "LastUpdateStatus": "InProgress",
+    "LastUpdateStatusReason": "The function is being created.",
+    "LastUpdateStatusReasonCode": "Creating",
+    "PackageType": "Zip",
+    "Architectures": [
+        "x86_64"
+    ],
+    "EphemeralStorage": {
+        "Size": 512
+    },
+    "SnapStart": {
+        "ApplyOn": "None",
+        "OptimizationStatus": "Off"
+    },
+    "RuntimeVersionConfig": {
+        "RuntimeVersionArn": "arn:aws:lambda:eu-west-1::runtime:f14046b558b69f092cf3c888cd59ed30350756eb27e125efed3b7a995eb8882d"
+    },
+    "LoggingConfig": {
+        "LogFormat": "Text",
+        "LogGroup": "/aws/lambda/ev-fleet-optimizer"
+    }
+}

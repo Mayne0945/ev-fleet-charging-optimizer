@@ -4,15 +4,15 @@ resource "aws_lambda_function" "gold_aggregator" {
   role             = aws_iam_role.lambda_role.arn
   handler          = "gold_aggregator.handler"
   runtime          = "python3.11"
-  filename         = "${path.module}/gold_lambda.zip"
-  source_code_hash = filebase64sha256("${path.module}/gold_lambda.zip")
+  filename         = "./modules/gold_lambda.zip"
+  source_code_hash = filebase64sha256("./modules/gold_lambda.zip")
   timeout          = 120
 
   layers = ["arn:aws:lambda:eu-west-1:336392948345:layer:AWSSDKPandas-Python311:18"]
 
   environment {
     variables = {
-      GOLD_BUCKET_NAME = aws_s3_bucket.medallion_layers["gold"].id
+      GOLD_BUCKET_NAME = module.my_lakehouse.gold_id
       ATHENA_WORKGROUP = aws_athena_workgroup.ev_fleet.name
       GLUE_DATABASE    = aws_glue_catalog_database.ev_fleet.name
     }
@@ -54,14 +54,14 @@ resource "aws_iam_role_policy" "gold_lambda_policy" {
         Effect = "Allow",
         Action = ["s3:GetObject", "s3:ListBucket"],
         Resource = [
-          aws_s3_bucket.medallion_layers["silver"].arn,
-          "${aws_s3_bucket.medallion_layers["silver"].arn}/*"
+          module.my_lakehouse.silver_arn,
+          "${module.my_lakehouse.silver_arn}/*"
         ]
       },
       {
         Effect = "Allow",
         Action = ["s3:PutObject", "s3:GetObject"],
-        Resource = "${aws_s3_bucket.medallion_layers["gold"].arn}/*"
+        Resource = "${module.my_lakehouse.gold_arn}/*"
       },
       {
         Effect = "Allow",

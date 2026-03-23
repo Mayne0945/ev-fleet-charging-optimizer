@@ -4,14 +4,14 @@ resource "aws_lambda_function" "optimizer" {
   role             = aws_iam_role.lambda_role.arn
   handler          = "optimizer.handler"
   runtime          = "python3.11"
-  filename         = "${path.module}/optimizer_lambda.zip"
-  source_code_hash = filebase64sha256("${path.module}/optimizer_lambda.zip")
+  filename         = "./modules/optimizer_lambda.zip"
+  source_code_hash = filebase64sha256("./modules/optimizer_lambda.zip")
   timeout          = 60
 
   environment {
     variables = {
       DYNAMODB_TABLE_NAME = aws_dynamodb_table.fleet_state.name
-      GOLD_BUCKET_NAME    = aws_s3_bucket.medallion_layers["gold"].id
+      GOLD_BUCKET_NAME    = module.my_lakehouse.gold_id
     }
   }
 }

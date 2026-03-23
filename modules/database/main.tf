@@ -23,7 +23,7 @@ resource "aws_dynamodb_table" "fleet_state" {
 # 2. IAM — allow Lambda to read/write DynamoDB
 resource "aws_iam_role_policy" "lambda_dynamodb_policy" {
   name = "${var.project_name}-lambda-dynamodb-policy"
-  role = aws_iam_role.lambda_role.id
+  role = module.my_lakehouse.lambda_role_name
 
   policy = jsonencode({
     Version = "2012-10-17",

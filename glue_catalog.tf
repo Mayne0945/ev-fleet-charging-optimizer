@@ -18,7 +18,7 @@ resource "aws_glue_catalog_table" "ev_telemetry" {
   }
 
   storage_descriptor {
-    location      = "s3://${aws_s3_bucket.medallion_layers["silver"].bucket}/ev_telemetry/"
+    location = "s3://${module.my_lakehouse.silver_id}/ev_telemetry/"
     input_format  = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat"
     output_format = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat"
 
@@ -136,8 +136,8 @@ resource "aws_iam_role_policy" "glue_s3_access" {
         Effect   = "Allow",
         Action   = ["s3:GetObject", "s3:ListBucket"],
         Resource = [
-          aws_s3_bucket.medallion_layers["silver"].arn,
-          "${aws_s3_bucket.medallion_layers["silver"].arn}/*"
+          module.my_lakehouse.silver_arn,
+          "${module.my_lakehouse.silver_arn}/*"
         ]
       }
     ]
@@ -146,13 +146,13 @@ resource "aws_iam_role_policy" "glue_s3_access" {
 
 # 4. Athena results bucket — Athena needs somewhere to write query results
 resource "aws_s3_bucket" "athena_results" {
-  bucket        = "${var.project_name}-athena-results-${random_id.suffix.hex}"
+  bucket        = "${var.project_name}-athena-results-00cc42d3"
   force_destroy = true
 }
 
 # 5. Athena workgroup — isolates our queries and points to results bucket
 resource "aws_athena_workgroup" "ev_fleet" {
-  name        = "${var.project_name}-workgroup"
+  name        = "ev-fleet-optimizer-workgroup"
   description = "EV Fleet query workgroup"
 
   configuration {
