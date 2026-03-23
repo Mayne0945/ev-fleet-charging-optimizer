@@ -51,10 +51,10 @@ resource "aws_iam_role_policy" "lambda_sqs_access" {
 resource "aws_lambda_function" "ingestor" {
   function_name    = "${var.project_name}-ingestor"
   role             = aws_iam_role.lambda_role.arn
-  handler          = "index.handler"
+  handler          = "ingestor.handler"
   runtime          = "python3.11"
-  filename         = "./modules/dummy_lambda.zip"
-  source_code_hash = filebase64sha256("./modules/dummy_lambda.zip")
+  filename         = "./build/dummy_lambda.zip"
+  source_code_hash = filebase64sha256("./build/dummy_lambda.zip")
 
   environment {
     variables = {
@@ -69,8 +69,8 @@ resource "aws_lambda_function" "transformer" {
   role             = aws_iam_role.lambda_role.arn
   handler          = "silver_transform.handler"
   runtime          = "python3.11"
-  filename         = "./modules/silver_lambda.zip"
-  source_code_hash = filebase64sha256("./modules/silver_lambda.zip")
+  filename         = "./build/silver_lambda.zip"
+  source_code_hash = filebase64sha256("./build/silver_lambda.zip")
   timeout          = 60
 
   layers = ["arn:aws:lambda:eu-west-1:336392948345:layer:AWSSDKPandas-Python311:18"]

@@ -4,8 +4,8 @@ resource "aws_lambda_function" "gold_aggregator" {
   role             = aws_iam_role.lambda_role.arn
   handler          = "gold_aggregator.handler"
   runtime          = "python3.11"
-  filename         = "./modules/gold_lambda.zip"
-  source_code_hash = filebase64sha256("./modules/gold_lambda.zip")
+  filename         = "./build/gold_lambda.zip"
+  source_code_hash = filebase64sha256("./build/gold_lambda.zip")
   timeout          = 120
 
   layers = ["arn:aws:lambda:eu-west-1:336392948345:layer:AWSSDKPandas-Python311:18"]

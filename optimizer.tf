@@ -4,8 +4,8 @@ resource "aws_lambda_function" "optimizer" {
   role             = aws_iam_role.lambda_role.arn
   handler          = "optimizer.handler"
   runtime          = "python3.11"
-  filename         = "./modules/optimizer_lambda.zip"
-  source_code_hash = filebase64sha256("./modules/optimizer_lambda.zip")
+  filename         = "./build/optimizer_lambda.zip"
+  source_code_hash = filebase64sha256("./build/optimizer_lambda.zip")
   timeout          = 60
 
   environment {

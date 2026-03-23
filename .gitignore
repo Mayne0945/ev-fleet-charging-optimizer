@@ -3,6 +3,8 @@
 *.tfstate
 *.tfstate.backup
 *.tfvars
+terraform.tfstate
+terraform.tfstate.backup
 
 # Python
 __pycache__/
@@ -18,4 +20,6 @@ credentials
 *.zip
 *.tfstate*
 .terraform/
-.terraform.lock.hcl
+
+# Ignore build artifacts
+build/
