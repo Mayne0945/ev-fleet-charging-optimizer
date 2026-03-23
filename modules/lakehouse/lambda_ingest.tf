@@ -9,19 +9,19 @@ resource "aws_iam_role_policy" "lambda_s3_access" {
       {
         Effect   = "Allow",
         Action   = ["s3:PutObject", "s3:GetObject"],
-        Resource = "${module.my_lakehouse.bronze_arn}/*"
+        Resource = "${aws_s3_bucket.medallion_layers["bronze"].arn}/*"
       },
       {
         Effect = "Allow",
         Action = ["s3:GetObject", "s3:PutObject"],
-        Resource = "${module.my_lakehouse.silver_arn}/*"
+        Resource = "${aws_s3_bucket.medallion_layers["silver"].arn}/*"
       },
       {
         Effect = "Allow",
         Action = ["s3:ListBucket", "s3:GetBucketLocation"],
         Resource = [
-          module.my_lakehouse.bronze_arn,
-          module.my_lakehouse.silver_arn
+          aws_s3_bucket.medallion_layers["bronze"].arn,
+          aws_s3_bucket.medallion_layers["silver"].arn
         ]
       }
     ]
@@ -53,12 +53,12 @@ resource "aws_lambda_function" "ingestor" {
   role             = aws_iam_role.lambda_role.arn
   handler          = "ingestor.handler"
   runtime          = "python3.11"
-  filename         = "./build/dummy_lambda.zip"
-  source_code_hash = filebase64sha256("./build/dummy_lambda.zip")
+  filename         = "${path.root}/build/dummy_lambda.zip"
+  source_code_hash = filebase64sha256("${path.root}/build/dummy_lambda.zip")
 
   environment {
     variables = {
-      BRONZE_BUCKET_NAME = module.my_lakehouse.bronze_id
+      BRONZE_BUCKET_NAME = aws_s3_bucket.medallion_layers["bronze"].id
     }
   }
 }
@@ -69,16 +69,16 @@ resource "aws_lambda_function" "transformer" {
   role             = aws_iam_role.lambda_role.arn
   handler          = "silver_transform.handler"
   runtime          = "python3.11"
-  filename         = "./build/silver_lambda.zip"
-  source_code_hash = filebase64sha256("./build/silver_lambda.zip")
+  filename         = "${path.root}/build/silver_lambda.zip"
+  source_code_hash = filebase64sha256("${path.root}/build/silver_lambda.zip")
   timeout          = 60
 
   layers = ["arn:aws:lambda:eu-west-1:336392948345:layer:AWSSDKPandas-Python311:18"]
 
   environment {
     variables = {
-      SILVER_BUCKET_NAME  = module.my_lakehouse.silver_id
-      DYNAMODB_TABLE_NAME = aws_dynamodb_table.fleet_state.name
+      SILVER_BUCKET_NAME  = aws_s3_bucket.medallion_layers["silver"].id
+      DYNAMODB_TABLE_NAME = var.dynamodb_table_name
     }
   }
 }
@@ -121,11 +121,11 @@ resource "aws_lambda_permission" "allow_bronze_trigger" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.transformer.function_name
   principal     = "s3.amazonaws.com"
-  source_arn    = module.my_lakehouse.bronze_arn
+  source_arn    = aws_s3_bucket.medallion_layers["bronze"].arn
 }
 
 resource "aws_s3_bucket_notification" "bronze_trigger" {
-  bucket = module.my_lakehouse.bronze_id
+  bucket = aws_s3_bucket.medallion_layers["bronze"].id
 
   lambda_function {
     lambda_function_arn = aws_lambda_function.transformer.arn
@@ -142,7 +142,7 @@ output "api_url" {
 
 output "my_buckets" {
   value = [
-    module.my_lakehouse.bronze_id,
-    module.my_lakehouse.silver_id,
+    aws_s3_bucket.medallion_layers["bronze"].id,
+    aws_s3_bucket.medallion_layers["silver"].id,
   ]
 }

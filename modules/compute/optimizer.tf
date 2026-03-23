@@ -1,17 +1,17 @@
 # 1. Optimizer Lambda
 resource "aws_lambda_function" "optimizer" {
   function_name    = "${var.project_name}-optimizer"
-  role             = aws_iam_role.lambda_role.arn
+  role             = var.lambda_role_arn
   handler          = "optimizer.handler"
   runtime          = "python3.11"
-  filename         = "./build/optimizer_lambda.zip"
-  source_code_hash = filebase64sha256("./build/optimizer_lambda.zip")
+  filename         = "${path.root}/build/optimizer_lambda.zip"
+  source_code_hash = filebase64sha256("${path.root}/build/optimizer_lambda.zip")
   timeout          = 60
 
   environment {
     variables = {
-      DYNAMODB_TABLE_NAME = aws_dynamodb_table.fleet_state.name
-      GOLD_BUCKET_NAME    = module.my_lakehouse.gold_id
+      DYNAMODB_TABLE_NAME = var.dynamodb_table_name
+      GOLD_BUCKET_NAME    = var.gold_bucket_id
     }
   }
 }

@@ -12,13 +12,13 @@ resource "aws_glue_catalog_table" "ev_telemetry" {
   table_type = "EXTERNAL_TABLE"
 
   parameters = {
-    "classification"       = "parquet"
-    "parquet.compression"  = "SNAPPY"
-    "projection.enabled"   = "false"
+    "classification"      = "parquet"
+    "parquet.compression" = "SNAPPY"
+    "projection.enabled"  = "false"
   }
 
   storage_descriptor {
-    location = "s3://${module.my_lakehouse.silver_id}/ev_telemetry/"
+    location      = "s3://${aws_s3_bucket.medallion_layers["silver"].id}/ev_telemetry/"
     input_format  = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetInputFormat"
     output_format = "org.apache.hadoop.hive.ql.io.parquet.MapredParquetOutputFormat"
 
@@ -32,80 +32,80 @@ resource "aws_glue_catalog_table" "ev_telemetry" {
 
     # Non-partition columns
     columns {
-      name    = "vehicle_id"
-      type    = "string"
+      name = "vehicle_id"
+      type = "string"
     }
     columns {
-      name    = "timestamp"
-      type    = "string"
+      name = "timestamp"
+      type = "string"
     }
     columns {
-      name    = "state_of_charge"
-      type    = "double"
+      name = "state_of_charge"
+      type = "double"
     }
     columns {
-      name    = "status"
-      type    = "string"
+      name = "status"
+      type = "string"
     }
     columns {
-      name    = "charger_connected"
-      type    = "boolean"
+      name = "charger_connected"
+      type = "boolean"
     }
     columns {
-      name    = "charger_type"
-      type    = "string"
+      name = "charger_type"
+      type = "string"
     }
     columns {
-      name    = "charger_kw"
-      type    = "double"
+      name = "charger_kw"
+      type = "double"
     }
     columns {
-      name    = "battery_temp_c"
-      type    = "double"
+      name = "battery_temp_c"
+      type = "double"
     }
     columns {
-      name    = "speed_kmh"
-      type    = "double"
+      name = "speed_kmh"
+      type = "double"
     }
     columns {
-      name    = "odometer_km"
-      type    = "double"
+      name = "odometer_km"
+      type = "double"
     }
     columns {
-      name    = "next_departure"
-      type    = "string"
+      name = "next_departure"
+      type = "string"
     }
     columns {
-      name    = "time_to_departure_min"
-      type    = "double"
+      name = "time_to_departure_min"
+      type = "double"
     }
     columns {
-      name    = "tariff_period"
-      type    = "string"
+      name = "tariff_period"
+      type = "string"
     }
     columns {
-      name    = "lat"
-      type    = "double"
+      name = "lat"
+      type = "double"
     }
     columns {
-      name    = "long"
-      type    = "double"
+      name = "long"
+      type = "double"
     }
     columns {
-      name    = "processed_at"
-      type    = "string"
+      name = "processed_at"
+      type = "string"
     }
     columns {
-      name    = "source_key"
-      type    = "string"
+      name = "source_key"
+      type = "string"
     }
     columns {
-      name    = "validation_errors"
-      type    = "string"
+      name = "validation_errors"
+      type = "string"
     }
     columns {
-      name    = "data_quality"
-      type    = "string"
+      name = "data_quality"
+      type = "string"
     }
   }
 
@@ -136,8 +136,8 @@ resource "aws_iam_role_policy" "glue_s3_access" {
         Effect   = "Allow",
         Action   = ["s3:GetObject", "s3:ListBucket"],
         Resource = [
-          module.my_lakehouse.silver_arn,
-          "${module.my_lakehouse.silver_arn}/*"
+          aws_s3_bucket.medallion_layers["silver"].arn,
+          "${aws_s3_bucket.medallion_layers["silver"].arn}/*"
         ]
       }
     ]

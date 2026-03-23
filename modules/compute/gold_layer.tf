@@ -1,20 +1,20 @@
 # 1. Gold Lambda function
 resource "aws_lambda_function" "gold_aggregator" {
   function_name    = "${var.project_name}-gold-aggregator"
-  role             = aws_iam_role.lambda_role.arn
+  role             = var.lambda_role_arn
   handler          = "gold_aggregator.handler"
   runtime          = "python3.11"
-  filename         = "./build/gold_lambda.zip"
-  source_code_hash = filebase64sha256("./build/gold_lambda.zip")
+  filename         = "${path.root}/build/gold_lambda.zip"
+  source_code_hash = filebase64sha256("${path.root}/build/gold_lambda.zip")
   timeout          = 120
 
   layers = ["arn:aws:lambda:eu-west-1:336392948345:layer:AWSSDKPandas-Python311:18"]
 
   environment {
     variables = {
-      GOLD_BUCKET_NAME = module.my_lakehouse.gold_id
-      ATHENA_WORKGROUP = aws_athena_workgroup.ev_fleet.name
-      GLUE_DATABASE    = aws_glue_catalog_database.ev_fleet.name
+      GOLD_BUCKET_NAME = var.gold_bucket_id
+      ATHENA_WORKGROUP = var.athena_workgroup_name
+      GLUE_DATABASE    = var.glue_database_name
     }
   }
 }
@@ -45,7 +45,7 @@ resource "aws_lambda_permission" "allow_eventbridge" {
 # 5. IAM — Gold Lambda needs to read Silver, write Gold, run Athena
 resource "aws_iam_role_policy" "gold_lambda_policy" {
   name = "${var.project_name}-gold-lambda-policy"
-  role = aws_iam_role.lambda_role.id
+  role = var.lambda_role_id
 
   policy = jsonencode({
     Version = "2012-10-17",
@@ -54,14 +54,14 @@ resource "aws_iam_role_policy" "gold_lambda_policy" {
         Effect = "Allow",
         Action = ["s3:GetObject", "s3:ListBucket"],
         Resource = [
-          module.my_lakehouse.silver_arn,
-          "${module.my_lakehouse.silver_arn}/*"
+          var.silver_bucket_arn,
+          "${var.silver_bucket_arn}/*"
         ]
       },
       {
         Effect = "Allow",
         Action = ["s3:PutObject", "s3:GetObject"],
-        Resource = "${module.my_lakehouse.gold_arn}/*"
+        Resource = "${var.gold_bucket_arn}/*"
       },
       {
         Effect = "Allow",
@@ -81,8 +81,8 @@ resource "aws_iam_role_policy" "gold_lambda_policy" {
           "s3:GetBucketLocation"
         ],
         Resource = [
-          aws_s3_bucket.athena_results.arn,
-          "${aws_s3_bucket.athena_results.arn}/*"
+          var.athena_results_bucket_arn,
+          "${var.athena_results_bucket_arn}/*"
         ]
       },
       {
