@@ -2,7 +2,7 @@ import boto3
 import json
 import os
 import datetime
-import time
+from decimal import Decimal  # FIX 1: Vital for DynamoDB numeric storage
 
 # ─────────────────────────────────────────────────────────────
 # CONFIGURATION
@@ -16,6 +16,7 @@ GRID_CAPACITY_KW = 150.0
 BATTERY_CAPACITY_KWH = 120.0
 
 CHARGER_KW = {"slow": 7.0, "fast": 22.0, "rapid": 50.0, "none": 22.0}
+
 
 # ─────────────────────────────────────────────────────────────
 # DECISION ENGINE
@@ -31,9 +32,22 @@ def make_decision(vehicle: dict, current_grid_load: float) -> dict:
     charger_kw         = float(vehicle.get("charger_kw", 0))
     time_to_departure  = float(vehicle.get("time_to_departure_min", 999))
     tariff_period      = vehicle.get("tariff_period", "standard")
-    next_departure     = vehicle.get("next_departure", "")
 
     effective_charger_kw = charger_kw if charger_kw > 0 else 22.0
+
+    # FIX 2: IN-TRANSIT SHORT-CIRCUIT — if it's moving, it's STANDBY. Period.
+    # This prevents CHARGE_NOW ever being issued to a vehicle that isn't at depot.
+    if status in ("en_route", "returning") and not charger_connected:
+        return {
+            "vehicle_id":      vehicle_id,
+            "recommendation":  "STANDBY",
+            "reason":          f"Vehicle in transit — SOC {soc}%",
+            "urgency_score":   0.0,
+            "urgency_level":   "low",
+            "soc":             soc,
+            "minutes_to_full": 0.0,
+            "grid_impact_kw":  0.0,
+        }
 
     # ── Compute urgency ───────────────────────────────────────
     target_soc        = 95.0
@@ -120,7 +134,8 @@ def make_decision(vehicle: dict, current_grid_load: float) -> dict:
                 "grid_impact_kw":  0.0,
             }
 
-    # 4. CONTINUE CHARGING — already plugged in, making progress
+    # 4. CONTINUE CHARGING — already plugged in and making progress
+    # Intentionally catches critical/high/medium vehicles that are already connected
     if charger_connected and urgency_level in ("medium", "high", "critical"):
         return {
             "vehicle_id":      vehicle_id,
@@ -189,7 +204,9 @@ def handler(event, context):
           f"({round(current_grid_load/GRID_CAPACITY_KW*100, 1)}%)")
 
     # ── Step 3: Run decision engine per vehicle ───────────────
-    schedule      = []
+    # FIX 3: Build vehicle lookup map ONCE before the loop — O(N) not O(N²)
+    vehicle_map    = {v["vehicle_id"]: v for v in vehicles}
+    schedule       = []
     critical_count = 0
     defer_count    = 0
 
@@ -214,26 +231,26 @@ def handler(event, context):
     # ── Step 4: Write schedule back to DynamoDB ───────────────
     with table.batch_writer() as batch:
         for decision in schedule:
+            original = vehicle_map.get(decision["vehicle_id"], {})
             batch.put_item(Item={
-                **{v["vehicle_id"]: v for v in vehicles
-                   if v["vehicle_id"] == decision["vehicle_id"]}.get(
-                       decision["vehicle_id"], {}),
+                **original,
                 "optimizer_recommendation": decision["recommendation"],
                 "optimizer_reason":         decision["reason"],
-                "optimizer_urgency_score":  str(decision["urgency_score"]),
+                # FIX 1: Decimal conversion — DynamoDB rejects Python floats
+                "optimizer_urgency_score":  Decimal(str(decision["urgency_score"])),
                 "optimizer_urgency_level":  decision["urgency_level"],
                 "optimizer_run_at":         now.isoformat() + "Z",
             })
 
     # ── Step 5: Write schedule to Gold S3 ────────────────────
     optimizer_output = {
-        "optimizer_run_at":    now.isoformat() + "Z",
-        "grid_load_kw":        round(current_grid_load, 1),
-        "grid_capacity_kw":    GRID_CAPACITY_KW,
-        "grid_utilization_pct":round(current_grid_load / GRID_CAPACITY_KW * 100, 1),
-        "critical_vehicles":   critical_count,
-        "deferred_vehicles":   defer_count,
-        "schedule":            schedule
+        "optimizer_run_at":     now.isoformat() + "Z",
+        "grid_load_kw":         round(current_grid_load, 1),
+        "grid_capacity_kw":     GRID_CAPACITY_KW,
+        "grid_utilization_pct": round(current_grid_load / GRID_CAPACITY_KW * 100, 1),
+        "critical_vehicles":    critical_count,
+        "deferred_vehicles":    defer_count,
+        "schedule":             schedule
     }
 
     s3_client.put_object(
