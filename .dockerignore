@@ -1,0 +1,31 @@
+# Git
+.git
+.gitignore
+
+# Virtual Environments
+.venv/
+venv/
+env/
+
+# Python Cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+
+# Local Data (Crucial for your Silver/Gold files)
+*.parquet
+*.csv
+*.json
+data/
+tmp/
+
+# Infrastructure
+.terraform/
+*.tfstate
+*.tfstate.backup
+
+# IDE
+.vscode/
+.idea/

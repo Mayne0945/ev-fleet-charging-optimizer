@@ -22,4 +22,5 @@ credentials
 .terraform/
 
 # Ignore build artifacts
-build/
+build/out.json
+response.json

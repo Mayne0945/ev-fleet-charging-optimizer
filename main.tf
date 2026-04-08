@@ -17,21 +17,22 @@ provider "aws" {
 module "database" {
   source           = "./modules/database"
   project_name     = var.project_name
-  lambda_role_name = module.lakehouse.lambda_role_name  # The final wire!
+  lambda_role_name = module.lakehouse.lambda_role_name
 }
 
 module "lakehouse" {
   source              = "./modules/lakehouse"
   project_name        = var.project_name
-  dynamodb_table_name = module.database.table_name # Passing the output
+  dynamodb_table_name = module.database.table_name
 }
 
 module "compute" {
   source       = "./modules/compute"
   project_name = var.project_name
-  
+
   # Wiring from Database
   dynamodb_table_name = module.database.table_name
+  dynamodb_table_arn  = module.database.table_arn  # NEW — wires DynamoDB ARN to Gold IAM policy
 
   # Wiring from Lakehouse
   lambda_role_arn           = module.lakehouse.lambda_role_arn
@@ -39,6 +40,7 @@ module "compute" {
   silver_bucket_arn         = module.lakehouse.silver_bucket_arn
   gold_bucket_arn           = module.lakehouse.gold_bucket_arn
   gold_bucket_id            = module.lakehouse.gold_bucket_id
+  athena_results_bucket_id = module.lakehouse.athena_results_bucket_id
   athena_results_bucket_arn = module.lakehouse.athena_results_bucket_arn
   athena_workgroup_name     = module.lakehouse.athena_workgroup_name
   glue_database_name        = module.lakehouse.glue_database_name

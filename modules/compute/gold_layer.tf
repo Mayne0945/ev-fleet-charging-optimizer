@@ -8,13 +8,13 @@ resource "aws_lambda_function" "gold_aggregator" {
   source_code_hash = filebase64sha256("${path.root}/build/gold_lambda.zip")
   timeout          = 120
 
-  layers = ["arn:aws:lambda:eu-west-1:336392948345:layer:AWSSDKPandas-Python311:18"]
+  # AWSSDKPandas layer removed — Gold no longer uses awswrangler or Athena
 
   environment {
     variables = {
-      GOLD_BUCKET_NAME = var.gold_bucket_id
-      ATHENA_WORKGROUP = var.athena_workgroup_name
-      GLUE_DATABASE    = var.glue_database_name
+      GOLD_BUCKET_NAME    = var.gold_bucket_id
+      DYNAMODB_TABLE_NAME = var.dynamodb_table_name
+      # ATHENA_WORKGROUP and GLUE_DATABASE removed — Gold reads from DynamoDB now
     }
   }
 }
@@ -42,7 +42,8 @@ resource "aws_lambda_permission" "allow_eventbridge" {
   source_arn    = aws_cloudwatch_event_rule.gold_schedule.arn
 }
 
-# 5. IAM — Gold Lambda needs to read Silver, write Gold, run Athena
+# 5. IAM — Gold Lambda needs DynamoDB read + Gold S3 write only
+# Athena, Glue, Silver S3, and Athena results permissions removed
 resource "aws_iam_role_policy" "gold_lambda_policy" {
   name = "${var.project_name}-gold-lambda-policy"
   role = var.lambda_role_id
@@ -52,48 +53,19 @@ resource "aws_iam_role_policy" "gold_lambda_policy" {
     Statement = [
       {
         Effect = "Allow",
-        Action = ["s3:GetObject", "s3:ListBucket"],
-        Resource = [
-          var.silver_bucket_arn,
-          "${var.silver_bucket_arn}/*"
-        ]
-      },
-      {
-        Effect = "Allow",
-        Action = ["s3:PutObject", "s3:GetObject"],
-        Resource = "${var.gold_bucket_arn}/*"
-      },
-      {
-        Effect = "Allow",
         Action = [
-          "athena:StartQueryExecution",
-          "athena:GetQueryExecution",
-          "athena:GetQueryResults"
+          "dynamodb:Scan",
+          "dynamodb:GetItem"
         ],
-        Resource = "*"
+        Resource = var.dynamodb_table_arn
       },
       {
         Effect = "Allow",
         Action = [
           "s3:PutObject",
-          "s3:GetObject",
-          "s3:ListBucket",
-          "s3:GetBucketLocation"
+          "s3:GetObject"
         ],
-        Resource = [
-          var.athena_results_bucket_arn,
-          "${var.athena_results_bucket_arn}/*"
-        ]
-      },
-      {
-        Effect = "Allow",
-        Action = [
-          "glue:GetTable",
-          "glue:GetDatabase",
-          "glue:GetPartitions",
-          "glue:GetPartition"
-        ],
-        Resource = "*"
+        Resource = "${var.gold_bucket_arn}/*"
       }
     ]
   })
