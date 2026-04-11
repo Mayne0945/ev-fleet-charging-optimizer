@@ -38,8 +38,11 @@ jobs:
           zip -j build/gold_lambda.zip src/gold/gold_aggregator.py
           zip -j build/optimizer_lambda.zip src/optimizer/optimizer.py
           zip -j build/silver_lambda.zip src/transformer/transformer.py
-          touch build/dummy_lambda.zip
-          zip build/dummy_lambda.zip build/ingestor_lambda.zip
+          python3 -c "
+          import zipfile, os
+          with zipfile.ZipFile('build/dummy_lambda.zip', 'w') as z:
+              z.writestr('dummy.py', 'def handler(event, context): return {}')
+          "
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
