@@ -47,14 +47,16 @@ resource "aws_iam_role_policy" "lambda_sqs_access" {
   })
 }
 
-# 4. Ingestor Lambda (SQS → Bronze)
+# 4. Ingestor Lambda (SQS -> Bronze)
 resource "aws_lambda_function" "ingestor" {
   function_name    = "${var.project_name}-ingestor"
   role             = aws_iam_role.lambda_role.arn
-  handler          = "ingestor.handler"
+  handler          = "ingestor.handler" 
   runtime          = "python3.11"
-  filename         = "${path.root}/build/dummy_lambda.zip"
-  source_code_hash = filebase64sha256("${path.root}/build/dummy_lambda.zip")
+  
+  # THE FIX: Point to the REAL ingestor zip, NOT the dummy
+  filename         = "${path.root}/build/ingestor_lambda.zip"
+  source_code_hash = filebase64sha256("${path.root}/build/ingestor_lambda.zip")
 
   environment {
     variables = {

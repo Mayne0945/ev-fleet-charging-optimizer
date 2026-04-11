@@ -17,17 +17,10 @@ ATHENA_WORKGROUP = os.environ['ATHENA_WORKGROUP']
 DATABASE         = os.environ['GLUE_DATABASE']
 RESULTS_BUCKET   = os.environ['ATHENA_RESULTS_BUCKET']
 
-# The Commercial Limit (for risk warnings)
 GRID_CAPACITY_KW = float(os.environ.get('GRID_CAPACITY_KW', 150.0))
-
-# The Hardware Limit (for Prophet's logistic cap)
 PHYSICAL_MAX_KW  = float(os.environ.get('PHYSICAL_MAX_KW', 500.0))
-
-# The Dynamic Lookback Window
 TRAINING_DAYS    = int(os.environ.get('TRAINING_DAYS', 30))
-
-# SAST = UTC+2 — all peak/tariff logic runs in local time
-LOCAL_TZ = 'Africa/Johannesburg'
+LOCAL_TZ         = 'Africa/Johannesburg'
 
 
 # ─────────────────────────────────────────────────────────────
@@ -75,22 +68,33 @@ def fetch_training_data() -> pd.DataFrame:
     """
     Two-level aggregation to get realistic depot demand per hour.
 
-    Problem: Silver has hundreds of telemetry snapshots per vehicle
-    per hour. A naive SUM gives 500 snapshots x 22kW = 11,000kW —
-    physically impossible for a 10-bus depot.
+    FIX 4 — TIMELINE INTEGRITY (combined SQL + Pandas approach):
 
-    Fix:
-    - Inner query: AVG charger_kw per vehicle per hour
-      (one representative value per vehicle)
-    - Outer query: SUM across vehicles for that hour
-      (actual depot load — max 10 x 50kW = 500kW)
+    SQL change: Removed charger_kw > 0 filter. Zero-kW hours where
+    vehicles are idle or en route are valid observations. They tell
+    Prophet demand was zero, which is physically correct.
 
-    TIMEZONE FIX (Fix 3):
-    Athena groups by hour_utc. If we leave ds in UTC, Prophet learns
-    that peak demand happens at 15:00-19:00 UTC — but that's 17:00-21:00
-    SAST. Our risk assessor uses local hours for tariff logic.
-    Converting to SAST before stripping timezone aligns the model's
-    learned patterns with the tariff hours it feeds into.
+    Pandas fix: After building the dataframe, we resample to 1-hour
+    frequency across the full window from the first observation to
+    the current SAST hour. Any gap — whether from a long idle weekend,
+    lost IoT signal, or simulation downtime — gets filled with 0.0kW.
+
+    Why resample and not just append one anchor row:
+    A single anchor row leaves interior gaps intact. Prophet is a
+    continuous curve-fitting model — a 62-hour hole between Friday's
+    50kW peak and a Monday anchor row causes Prophet to hallucinate
+    ghost demand across the entire gap. Resampling crushes every gap
+    explicitly and gives Prophet a structurally sound timeline.
+
+    Why resample y with mean() not sum():
+    sum() on a zero-filled gap row gives 0 — correct for demand.
+    But on real data rows, sum() would double-count if multiple rows
+    exist per hour (they shouldn't after the GROUP BY, but mean() is
+    safer and semantically correct: we want the representative kW
+    value for that hour, not an accumulation).
+
+    vehicles_active is resampled separately with max() — we want the
+    peak vehicle count seen in that hour, not a sum across sub-hours.
     """
     now        = datetime.datetime.now(datetime.timezone.utc)
     start_date = now - datetime.timedelta(days=TRAINING_DAYS)
@@ -121,7 +125,6 @@ def fetch_training_data() -> pd.DataFrame:
             FROM ev_telemetry
             WHERE ({partition_filter})
               AND charger_kw IS NOT NULL
-              AND CAST(charger_kw AS DOUBLE) > 0
             GROUP BY
                 date_trunc('hour', from_iso8601_timestamp(timestamp)),
                 vehicle_id
@@ -139,18 +142,48 @@ def fetch_training_data() -> pd.DataFrame:
 
     df = pd.DataFrame(rows)
 
-    # FIX 3 — TIMEZONE: Convert UTC → SAST before stripping timezone for Prophet.
-    # This ensures Prophet learns patterns in local time (e.g. evening charging
-    # peak at 19:00 SAST, not 17:00 UTC), and risk assessment hours align with
-    # actual South African tariff windows.
+    # FIX 3 — TIMEZONE: Convert UTC → SAST before stripping for Prophet.
     df["ds"] = (
         pd.to_datetime(df["hour_utc"])
           .dt.tz_convert(LOCAL_TZ)
-          .dt.tz_localize(None)        # Prophet requires timezone-naive datetimes
+          .dt.tz_localize(None)
+    )
+    df["y"]               = df["total_kw"].astype(float)
+    df["vehicles_active"] = df["vehicles_active"].astype(float)
+    df = df[["ds", "y", "vehicles_active"]].dropna()
+
+    # ─────────────────────────────────────────────────────────
+    # FIX 4 — BULLETPROOF TIMELINE INTEGRITY
+    # ─────────────────────────────────────────────────────────
+    current_hour_sast = (
+        pd.Timestamp.now(tz=LOCAL_TZ)
+          .tz_localize(None)
+          .floor('h')
     )
 
-    df["y"]  = df["total_kw"].astype(float)
-    df       = df[["ds", "y", "vehicles_active"]].dropna()
+    # Set ds as index for resampling
+    df = df.set_index("ds")
+
+    # Extend the index to include the current hour if we're behind
+    if df.index.max() < current_hour_sast:
+        print(f"⚓ Gap detected: last data at {df.index.max()} — "
+              f"extending timeline to {current_hour_sast} (SAST now)")
+        # Add current hour explicitly so resample has an endpoint to fill to
+        df.loc[current_hour_sast] = [0.0, 0.0]
+
+    # Resample to 1-hour frequency across the full window.
+    # y (demand kW): mean — representative value for the hour
+    # vehicles_active: max — peak vehicle count seen in the hour
+    # fillna(0) — any gap (idle period, lost signal) becomes 0kW
+    df = df.resample("1h").agg({
+        "y":               "mean",
+        "vehicles_active": "max"
+    }).fillna(0).reset_index()
+
+    gap_hours = (df["y"] == 0).sum()
+    if gap_hours > 0:
+        print(f"🔧 Filled {gap_hours} zero-demand hours in timeline "
+              f"(idle fleet, simulation downtime, or lost signal)")
 
     print(f"📈 Training data (SAST): {df['ds'].min()} → {df['ds'].max()} "
           f"| Mean demand: {df['y'].mean():.1f}kW "
@@ -165,20 +198,12 @@ def fetch_training_data() -> pd.DataFrame:
 def fit_and_forecast(df: pd.DataFrame) -> pd.DataFrame:
     print(f"🔮 Fitting Prophet model on {len(df)} data points...")
 
-    # 1. Physical cap — logistic growth prevents impossible predictions
     df["cap"] = PHYSICAL_MAX_KW
 
-    # 2. Starvation guard — weekly seasonality needs >= 7 days of hourly data
     has_full_week = len(df) >= 168
 
     model = Prophet(
-        growth='logistic',            # Respects physical cap
-        # FIX 2 — DAILY SEASONALITY: Disable built-in daily_seasonality and
-        # replace with a custom higher-order version. EV bus fleets have sharp
-        # intra-day spikes (morning depot drain, evening charging surge) that
-        # the default fourier_order=4 misses. fourier_order=10 captures finer
-        # sub-daily patterns. Running both simultaneously would conflict since
-        # they model the same period=1 cycle.
+        growth='logistic',
         daily_seasonality=False,
         weekly_seasonality=has_full_week,
         yearly_seasonality=False,
@@ -187,28 +212,21 @@ def fit_and_forecast(df: pd.DataFrame) -> pd.DataFrame:
         changepoint_prior_scale=0.05
     )
 
-    # FIX 1 — SA PUBLIC HOLIDAYS: Prophet treats holidays as normal days by
-    # default, which wildly overestimates load on days like Christmas or
-    # Heritage Day when buses don't run. Injecting the ZA calendar corrects
-    # this — the model learns to suppress predictions on public holidays.
+    # FIX 1 — SA PUBLIC HOLIDAYS
     model.add_country_holidays(country_name='ZA')
 
-    # FIX 2 continued — Custom daily seasonality with higher Fourier order.
-    # period=1 (daily), fourier_order=10 gives 20 parameters to fit the
-    # morning/evening charging curve precisely.
+    # FIX 2 — CUSTOM DAILY SEASONALITY (higher Fourier order)
     model.add_seasonality(name='daily_shifts', period=1, fourier_order=10)
 
-    # ds is already timezone-naive and in SAST from fetch_training_data()
     model.fit(df[["ds", "y", "cap"]])
 
-    future         = model.make_future_dataframe(periods=24, freq='h')
-    future["cap"]  = PHYSICAL_MAX_KW   # Future dataframe also needs the cap
-    forecast       = model.predict(future)
+    future        = model.make_future_dataframe(periods=24, freq='h')
+    future["cap"] = PHYSICAL_MAX_KW
+    forecast      = model.predict(future)
 
     last_training_time = df["ds"].max()
     forecast_only      = forecast[forecast["ds"] > last_training_time].copy()
 
-    # 3. Hard clip — belt and braces regardless of logistic growth
     forecast_only["yhat"]       = forecast_only["yhat"].clip(lower=0, upper=PHYSICAL_MAX_KW)
     forecast_only["yhat_lower"] = forecast_only["yhat_lower"].clip(lower=0)
     forecast_only["yhat_upper"] = forecast_only["yhat_upper"].clip(lower=0, upper=PHYSICAL_MAX_KW)
@@ -225,12 +243,9 @@ def fit_and_forecast(df: pd.DataFrame) -> pd.DataFrame:
 # ─────────────────────────────────────────────────────────────
 def assess_demand_risk(forecast_df: pd.DataFrame) -> list:
     """
-    Risk assessment runs on SAST hours (ds is already SAST from
-    fetch_training_data conversion). Tariff windows reflect actual
-    South African electricity pricing periods in local time.
-
+    Risk assessment runs on SAST hours. Tariff windows reflect
+    South African electricity pricing in local time.
     SAST peak windows: 07:00-10:00 and 17:00-21:00
-    These now correctly align with the hours Prophet learned from.
     """
     hourly_forecast = []
 
@@ -246,7 +261,6 @@ def assess_demand_risk(forecast_df: pd.DataFrame) -> list:
             "healthy"
         )
 
-        # ds is SAST — hour comparison is now physically correct
         hour = row["ds"].hour
         if 7 <= hour < 10 or 17 <= hour < 21:
             tariff = "peak"
@@ -256,7 +270,7 @@ def assess_demand_risk(forecast_df: pd.DataFrame) -> list:
             tariff = "standard"
 
         hourly_forecast.append({
-            "hour_sast":          row["ds"].isoformat(),   # Labelled SAST for clarity
+            "hour_sast":          row["ds"].isoformat(),
             "predicted_kw":       predicted_kw,
             "lower_bound_kw":     lower_kw,
             "upper_bound_kw":     upper_kw,
@@ -314,11 +328,19 @@ def handler(event, context):
         "hourly_forecast": hourly_forecast
     }
 
-    # Latest snapshot — consumed by Grafana and optimizer
+    # Latest snapshot — pretty-printed for readability (archive + Grafana tooltip)
     s3.put_object(
         Bucket=GOLD_BUCKET,
         Key="forecast/latest.json",
         Body=json.dumps(forecast_output, indent=2),
+        ContentType="application/json"
+    )
+
+    # Single-line version for Athena JsonSerDe — Glue table reads this
+    s3.put_object(
+        Bucket=GOLD_BUCKET,
+        Key="forecast-latest/latest.json",
+        Body=json.dumps(forecast_output),
         ContentType="application/json"
     )
 
