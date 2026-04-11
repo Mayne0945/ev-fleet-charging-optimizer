@@ -69,7 +69,7 @@ resource "aws_lambda_function" "ingestor" {
 resource "aws_lambda_function" "transformer" {
   function_name    = "${var.project_name}-transformer"
   role             = aws_iam_role.lambda_role.arn
-  handler          = "silver_transform.handler"
+  handler          = "transformer.handler"
   runtime          = "python3.11"
   filename         = "${path.root}/build/silver_lambda.zip"
   source_code_hash = filebase64sha256("${path.root}/build/silver_lambda.zip")
