@@ -10,7 +10,6 @@ terraform {
 
 provider "aws" {
   region  = "eu-west-1"
-  profile = "personal"
 }
 
 # 1. The Database Module
