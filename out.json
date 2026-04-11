@@ -1,0 +1,1 @@
+{"statusCode": 200, "body": "{\"vehicles_scheduled\": 10, \"critical_vehicles\": 2, \"deferred_vehicles\": 3, \"grid_utilization\": 44.0}"}

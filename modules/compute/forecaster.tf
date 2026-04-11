@@ -41,7 +41,7 @@ resource "aws_lambda_function" "forecaster" {
   image_uri     = "${aws_ecr_repository.forecaster.repository_url}:latest"
 
   timeout     = 600    # 10 minutes — Prophet fit on 7 days of hourly data
-  memory_size = 1024   # 1GB — Prophet + pandas are memory hungry
+  memory_size = 3008   # 3GB — Prophet + pandas are memory hungry
 
   environment {
     variables = {
@@ -54,6 +54,11 @@ resource "aws_lambda_function" "forecaster" {
       PHYSICAL_MAX_KW       = "500.0"  # Change per deployment
       GRID_CAPACITY_KW      = "150.0"  # Change per deployment
       TRAINING_DAYS         = "30"     # Change per deployment
+
+      # Explicitly map the C++ engine so the non-root user can find it
+      CMDSTAN      = "/opt/cmdstan/cmdstan-2.38.0"
+      STAN_BACKEND = "CMDSTANPY"
+      TMPDIR       = "/tmp"
     }
   }
 
