@@ -69,11 +69,12 @@ resource "aws_lambda_function" "ingestor" {
 resource "aws_lambda_function" "transformer" {
   function_name    = "${var.project_name}-transformer"
   role             = aws_iam_role.lambda_role.arn
-  handler          = "transformer.handler"
+  handler          = "silver_transform.handler"
   runtime          = "python3.11"
   filename         = "${path.root}/build/silver_lambda.zip"
   source_code_hash = filebase64sha256("${path.root}/build/silver_lambda.zip")
   timeout          = 60
+  memory_size      = 256
 
   layers = ["arn:aws:lambda:eu-west-1:336392948345:layer:AWSSDKPandas-Python311:18"]
 
