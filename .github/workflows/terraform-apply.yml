@@ -33,7 +33,7 @@ jobs:
         run: |
           mkdir -p build
           zip -j build/ingestor_lambda.zip src/ingestor/ingestor.py
-          zip -j build/transformer_lambda.zip src/transformer/transformer.py
+          zip -j build/transformer_lambda.zip src/transformer/silver_transform.py
           zip -j build/gold_lambda.zip src/gold/gold_aggregator.py
           zip -j build/optimizer_lambda.zip src/optimizer/optimizer.py
           zip -j build/silver_lambda.zip src/transformer/silver_transform.py
