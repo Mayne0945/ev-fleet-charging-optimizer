@@ -24,3 +24,7 @@ credentials
 # Ignore build artifacts
 build/out.json
 response.json
+out.json
+response.json
+out.json
+response.json
