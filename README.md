@@ -1,13 +1,26 @@
 # EV Fleet Charging Optimizer & Grid Load Prediction System
 
-Production-grade serverless cloud data engineering system — real-time EV fleet telemetry, Medallion data lake, intelligent charging optimisation, containerised ML demand forecasting, and live operational dashboard. Fully deployed on AWS, managed via Terraform IaC, with CI/CD via GitHub Actions.
+![AWS](https://img.shields.io/badge/AWS-Serverless-FF9900?style=flat&logo=amazonaws&logoColor=white)
+![Terraform](https://img.shields.io/badge/Terraform-IaC-7B42BC?style=flat&logo=terraform&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.11-3776AB?style=flat&logo=python&logoColor=white)
+![Prophet](https://img.shields.io/badge/ML-Prophet-00A3E0?style=flat)
+![Grafana](https://img.shields.io/badge/Dashboard-Grafana-F46800?style=flat&logo=grafana&logoColor=white)
+![CI/CD](https://img.shields.io/badge/CI%2FCD-GitHub_Actions_OIDC-2088FF?style=flat&logo=githubactions&logoColor=white)
+
+---
+
+## The Problem
+
+When a large EV fleet returns to depot simultaneously, every vehicle plugging in at full power creates a demand spike that risks tripping the grid, incurring peak tariff penalties, and leaving the lowest-priority buses undercharged for the next shift.
+
+This system solves that. It ingests live vehicle telemetry, predicts grid demand 24 hours ahead, and automatically allocates charging power across the fleet — prioritising by urgency, deferring during peak tariff windows, and never exceeding depot capacity.
 
 ---
 
 ## Dashboard
 
 ![Main Operations](docs/dashboard_main.png)
-*Real-time Grid Load, Fleet SOC, and Prophet Demand Forecasting*
+*Real-time Grid Load, Fleet SOC, and Prophet Demand Forecast*
 
 ![System Details](docs/dashboard_details.png)
 *Battery Thermal Monitoring and Tariff Period tracking*
@@ -32,7 +45,7 @@ aws events enable-rule --name ev-fleet-optimizer-schedule --region eu-west-1
 python3 simulation/fleet_manager.py
 ```
 
-Estimated AWS cost: under $5/month at simulation scale. EventBridge schedules disabled between sessions to eliminate idle cost.
+> Estimated AWS cost: under $5/month at simulation scale. EventBridge schedules are disabled between sessions to eliminate idle cost.
 
 ---
 
@@ -76,7 +89,7 @@ Fleet Simulation (10 EVBus coroutines, 600x time multiplier)
 
 ## Optimizer and Dynamic Load Management
 
-On every optimizer run, a single-threaded DLM allocation pass executes before the decision tree. It reads all vehicles from DynamoDB, ranks them by urgency score descending, and distributes the 150kW depot budget proportionally by urgency weight. Each CHARGE_NOW assignment reduces the remaining budget before the next vehicle is evaluated — preventing simultaneous over-allocation. Vehicles that cannot be served receive QUEUE_FOR_CHARGING and are re-evaluated on the next run when headroom is available.
+On every optimizer run, a DLM allocation pass executes before the decision tree. It reads all vehicles from DynamoDB, ranks them by urgency score descending, and distributes the 150kW depot budget proportionally by urgency weight. Each CHARGE_NOW assignment reduces the remaining budget before the next vehicle is evaluated — preventing simultaneous over-allocation. Vehicles that cannot be served receive QUEUE_FOR_CHARGING and are re-evaluated on the next run.
 
 **Decision Tree (Priority Order)**
 
@@ -84,28 +97,33 @@ On every optimizer run, a single-threaded DLM allocation pass executes before th
 |---|---|---|
 | 1 | DO_NOT_CHARGE | battery_temp >= 45°C — thermal safety override |
 | 2 | EMERGENCY_RETURN | en_route AND SOC <= 10% |
-| 3 | STANDBY (transit) | moving and not connected |
+| 3 | STANDBY (transit) | moving and not connected — in-transit short-circuit |
 | 4 | CHARGE_NOW | urgency >= 60 AND grid has headroom |
 | 5 | QUEUE_FOR_CHARGING | urgency >= 60 AND grid at capacity |
 | 6 | CONTINUE_CHARGING | connected AND medium+ urgency |
 | 7 | DEFER_CHARGING | peak tariff AND urgency < 40 |
-| 8 | STANDBY | default |
+| 8 | STANDBY | default — SOC healthy, no action required |
 
-Urgency formula: `(time_pressure × 0.6) + (soc_weight × 0.4)` — range 0–100
+**Urgency formula:** `(time_pressure × 0.6) + (soc_weight × 0.4)` — range 0–100
 
-Peak tariff evasion: During peak hours (07:00–10:00 and 17:00–21:00 SAST), effective depot capacity drops to 30kW. Only vehicles with urgency >= 80 break through.
+**Peak tariff evasion:** During peak hours (07:00–10:00 and 17:00–21:00 SAST), effective depot capacity drops to 30kW. Only vehicles with urgency >= 80 break through. Low-urgency vehicles wait for off-peak windows automatically.
+
+**Li-ion charging curve:** The fleet manager simulates real battery physics — full CC-phase rate from 0–80% SOC, linear taper to 20% of rate from 80–95%, trickle-only above 95%. The battery will never be hammered at full power near capacity.
 
 ---
 
 ## Demand Forecasting
 
-Containerised Lambda (Docker on ECR) queries 30 days of Silver telemetry via two-level Athena aggregation, fits Prophet with CmdStan C++ backend, and produces a 24-hour-ahead forecast with 80% confidence intervals.
+Containerised Lambda (Docker on ECR) queries 30 days of Silver telemetry via two-level Athena aggregation, fits a Prophet model with CmdStan C++ backend, and writes a 24-hour-ahead demand forecast with 80% confidence intervals to Gold S3 every hour.
 
 **Why Docker:** CmdStan C++ backend exceeds the 250MB Lambda zip limit. Container images support up to 10GB.
 
-**Training data aggregation:** Naive SUM of `charger_kw` inflates values 50–500x. Correct approach: AVG per vehicle per hour (inner query), SUM across vehicles (outer query). Max realistic output: 10 vehicles × 50kW = 500kW.
+**Training data:** Naive SUM of `charger_kw` inflates values 50–500x across hundreds of telemetry snapshots per hour. Correct approach: AVG per vehicle per hour (inner query), SUM across vehicles (outer query). Max realistic depot output: 10 vehicles × 50kW = 500kW.
 
-**SA Context:** Prophet trained with `add_country_holidays(country_name='ZA')` and custom daily seasonality (`fourier_order=10`) to capture sharp morning/evening EV bus shift patterns. Training data converted UTC → SAST before model fit so learned patterns align with local tariff windows.
+**South African context:**
+- `add_country_holidays(country_name='ZA')` — Prophet treats public holidays as normal workdays without this, wildly overestimating load on days buses don't run
+- Custom daily seasonality (`fourier_order=10`) — captures sharp morning/evening EV bus shift patterns that the default `fourier_order=4` misses
+- Training data converted UTC → SAST before model fit — ensures learned patterns align with local tariff windows, not UTC offsets
 
 ---
 
@@ -122,7 +140,7 @@ Containerised Lambda (Docker on ECR) queries 30 days of Silver telemetry via two
 | Battery Temperature | Gauge | Silver |
 | 24-Hour Demand Forecast | Time series | Gold |
 
-Vehicle dropdown variable for per-bus drill-down across relevant panels.
+Vehicle dropdown variable enables per-bus drill-down across all relevant panels.
 
 ---
 
@@ -142,13 +160,14 @@ Authentication via OIDC. No long-lived AWS access keys stored in GitHub secrets.
 | Decision | Choice | Rationale |
 |---|---|---|
 | Ingestion buffer | SQS not Kinesis | One consumer, pay-per-message, no idle shard cost |
-| Silver format | Parquet + Snappy | Columnar, Athena predicate pushdown |
-| DynamoDB billing | PAY_PER_REQUEST | No idle cost, auto-scales |
+| Silver format | Parquet + Snappy | Columnar storage, Athena predicate pushdown |
+| DynamoDB billing | PAY_PER_REQUEST | No idle cost, auto-scales with fleet size |
 | Gold reads DynamoDB not Athena | Single source of truth | Dashboard always agrees with optimizer |
 | Lambda container for Prophet | Docker on ECR | CmdStan C++ exceeds 250MB zip limit |
-| Grafana over QuickSight | OSS + Athena plugin | QuickSight per-session pricing prohibitive |
+| Grafana over QuickSight | OSS + Athena plugin | QuickSight per-session pricing prohibitive at development scale |
 | Terraform from day one | Not a future enhancement | All resources version-controlled from first commit |
-| DLM inside optimizer.py | Not a separate Lambda | Optimizer holds all state — separate Lambda adds cold start with no benefit |
+| DLM inside optimizer.py | Not a separate Lambda | Optimizer holds all state — separate Lambda adds cold start latency with no benefit |
+| Safe-start fallback | 7kW floor after 5min | Prevents buses sitting empty at departure if optimizer is slow to respond |
 
 ---
 
@@ -158,16 +177,19 @@ Authentication via OIDC. No long-lived AWS access keys stored in GitHub secrets.
 |---|---|---|
 | DLM always 0kW | Boolean `True` != string `"true"` in DynamoDB filter | `.eq(True)` throughout |
 | Simulator ignored optimizer | No DynamoDB read in fleet manager loop | Added DLM sync coroutine every 5 ticks |
-| Gold and Optimizer disagreed | Duplicate decision engine in Gold Aggregator | Removed, Gold reads from DynamoDB |
+| Gold and Optimizer disagreed | Duplicate decision engine in Gold Aggregator | Removed — Gold reads from DynamoDB |
 | Timeline fracture at 600x | EventBridge 5-min = 3000 simulated minutes | Fleet manager invokes optimizer every 30 real seconds |
 | Prophet data inflated 500x | Naive SUM across hundreds of snapshots per hour | Two-level aggregation: AVG per vehicle, SUM across vehicles |
 | Prophet stale forecast | `charger_kw > 0` excluded idle periods | Removed filter, resampled timeline anchor to current hour |
 | Prophet timezone error | UTC metadata in datetime column | `.dt.tz_localize(None)` before `model.fit()` |
 | Lambda handler mismatch post CI/CD | File renamed and handler updated in separate commits | Always rename file and update handler in the same commit |
+| SQS silent failures | Response not captured — fire and forget | Capture `MessageId` — no ID means the message does not exist |
+| SOC dropping 25% per tick | Tick interval too large at 600x multiplier | Reduced interval from 1–3s to 0.1–0.5s for smooth physics |
 
 ---
 
 ## Author
 
-Tshifhiwa Gift Moila — Cloud Data Engineer  
+**Tshifhiwa Gift Moila** — Cloud Data Engineer
 Johannesburg, South Africa — April 2026
+[GitHub](https://github.com/Mayne0945) · [LinkedIn](https://linkedin.com/in/your-profile)
