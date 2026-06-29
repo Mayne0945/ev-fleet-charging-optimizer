@@ -192,4 +192,4 @@ Authentication via OIDC. No long-lived AWS access keys stored in GitHub secrets.
 
 **Tshifhiwa Gift Moila** — Cloud Data Engineer
 Johannesburg, South Africa — April 2026
-[GitHub](https://github.com/Mayne0945) · [LinkedIn](https://linkedin.com/in/your-profile)
+[GitHub](https://github.com/Mayne0945) · [LinkedIn](https://linkedin.com/in/tshifhiwa-moila-a506212a4)
